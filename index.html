@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador Tutor IA - Modo Choice</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f4f7f6; }
+        .loader { border: 3px solid #f3f3ff; border-top: 3px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Tabs */
+        .tab-button { transition: all 0.2s; border-bottom: 3px solid transparent; color: #6b7280; }
+        .tab-button.active { border-color: #2563eb; color: #1d4ed8; font-weight: 700; }
+        .tab-panel { display: none; animation: fadeIn 0.3s ease-in-out; }
+        .tab-panel.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Cards */
+        .mode-card {
+            display: flex; flex-direction: column; align-items: center; padding: 24px;
+            border: 2px solid #e5e7eb; border-radius: 12px; cursor: pointer; transition: all 0.2s;
+            background: #fff; text-align: center;
+        }
+        .mode-card:hover { border-color: #2563eb; transform: translateY(-3px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        
+        /* Progress & Modals */
+        #progress-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; align-items: center; justify-content: center; }
+        .progress-box { background: white; padding: 24px; border-radius: 12px; width: 90%; max-width: 400px; text-align: center; }
+        .progress-bar { width: 100%; height: 10px; background: #e5e7eb; border-radius: 5px; overflow: hidden; margin-top: 15px; }
+        .progress-fill { height: 100%; background: #2563eb; width: 0%; transition: width 0.3s; }
+        
+        /* Toast Notification */
+        #toast {
+            visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 8px; padding: 16px; position: fixed; z-index: 100; left: 50%; bottom: 30px; transform: translateX(-50%); font-size: 17px; opacity: 0; transition: opacity 0.5s, bottom 0.5s;
+        }
+        #toast.show { visibility: visible; opacity: 1; bottom: 50px; }
+        #toast.success { background-color: #10b981; } /* Green */
+        #toast.error { background-color: #ef4444; } /* Red */
+
+        /* Choice Specific */
+        .mcq-option {
+            display: flex; align-items: center; padding: 12px; margin-bottom: 8px;
+            border: 2px solid #e5e7eb; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+        }
+        .mcq-option:hover { background-color: #f9fafb; }
+        .mcq-option.selected { border-color: #2563eb; background-color: #eff6ff; }
+        .mcq-option.correct { border-color: #10b981; background-color: #d1fae5; }
+        .mcq-option.incorrect { border-color: #ef4444; background-color: #fee2e2; }
+        
+        .qa-card { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px; position: relative; }
+        .accordion-btn {
+            width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center;
+            padding: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-weight: 600; margin-bottom: 4px;
+        }
+        .accordion-content { display: none; padding: 0 0 12px 0; border-left: 2px solid #e5e7eb; margin-bottom: 8px; background: #fff; }
+        .accordion-content.open { display: block; }
+        
+        /* New Folder Styles */
+        .folder-header {
+            background-color: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
+            padding: 10px 14px; border-radius: 8px; font-weight: 700;
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+        }
+        .folder-header:hover { background-color: #dbeafe; }
+        .folder-content {
+            display: none; margin-left: 12px; padding-left: 12px; border-left: 2px solid #dbeafe;
+        }
+        .folder-content.open { display: block; }
+        
+        .topic-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 12px; background: white; border: 1px solid #f3f4f6;
+            border-radius: 6px; margin-bottom: 4px; transition: all 0.2s;
+        }
+        .topic-item:hover { background: #f9fafb; border-color: #e5e7eb; }
+        .topic-selected { background: #f0fdf4; border-color: #bbf7d0; }
+
+        /* Practice Sidebar Nested */
+        .sidebar-folder-btn {
+            width: 100%; text-align: left; padding: 8px; font-weight: 600; color: #374151;
+            display: flex; justify-content: space-between; align-items: center;
+            background: #f3f4f6; border-radius: 6px; margin-bottom: 2px;
+        }
+        .sidebar-folder-content { display: none; padding-left: 8px; }
+        .sidebar-folder-content.open { display: block; }
+        .sidebar-topic-btn {
+            display: flex; justify-content: space-between; width: 100%; padding: 6px 8px;
+            font-size: 0.9rem; color: #6b7280; border-radius: 4px;
+        }
+        .sidebar-topic-btn:hover { background: #e5e7eb; color: #111827; }
+
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- Toast Notification -->
+    <div id="toast">Notificación</div>
+
+    <!-- Modal Progreso -->
+    <div id="progress-modal">
+        <div class="progress-box">
+            <h3 id="progress-title" class="text-lg font-bold mb-2">Procesando...</h3>
+            <div class="progress-bar"><div id="progress-bar-fill" class="progress-fill"></div></div>
+            <p id="progress-step" class="text-sm text-gray-500 mt-2 italic">Iniciando...</p>
+        </div>
+    </div>
+    
+    <!-- Modal Nueva Materia -->
+    <div id="new-subject-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg w-full max-w-sm shadow-xl">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Crear Nueva Materia</h3>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Nombre de la materia:</label>
+            <input type="text" id="new-subject-input" class="w-full p-2 border border-gray-300 rounded mb-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Anatomía">
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('new-subject-modal').style.display='none'" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="confirm-new-subject" class="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Crear</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Nueva Carpeta -->
+    <div id="new-folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg w-full max-w-sm shadow-xl">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Crear Carpeta</h3>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Nombre de la carpeta:</label>
+            <input type="text" id="create-folder-input" class="w-full p-2 border border-gray-300 rounded mb-4 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Unidad 1">
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('new-folder-modal').style.display='none'" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="confirm-create-folder" class="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Crear</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Mover a Carpeta -->
+    <div id="move-folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg w-full max-w-sm shadow-xl">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Mover a Carpeta</h3>
+            <p class="text-sm text-gray-600 mb-2">Mover los temas seleccionados a:</p>
+            
+            <div class="mb-4">
+                <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                    <input type="radio" name="folder-dest" value="existing" checked class="text-blue-600">
+                    <span class="text-sm font-medium">Carpeta Existente</span>
+                </label>
+                <select id="existing-folder-select" class="w-full p-2 border rounded text-sm bg-gray-50 mb-4">
+                    <option value="">-- Seleccionar --</option>
+                </select>
+
+                <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                    <input type="radio" name="folder-dest" value="new" class="text-blue-600">
+                    <span class="text-sm font-medium">Nueva Carpeta</span>
+                </label>
+                <input type="text" id="new-folder-input" class="w-full p-2 border rounded text-sm" placeholder="Nombre de la carpeta..." disabled>
+            </div>
+            
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('move-folder-modal').style.display='none'" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="confirm-move-folder" class="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700">Mover</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Configuración (API KEY & USER) -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-black bg-opacity-80 items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-xl w-full max-w-sm shadow-2xl transform transition-all">
+            <div class="text-center mb-6">
+                <div class="bg-blue-100 p-3 rounded-full inline-block mb-3">
+                    <svg data-lucide="user-cog" class="w-8 h-8 text-blue-600"></svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900">Configuración</h3>
+                <p class="text-sm text-gray-500 mt-1">Tu identidad y acceso a IA.</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">ID de Usuario (Login)</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="setting-user-id" class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 font-mono text-sm" placeholder="Ingresa tu ID...">
+                        <button id="generate-id-btn" class="p-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700" title="Generar ID Aleatorio">
+                            <svg data-lucide="dice-5" class="w-5 h-5"></svg>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Usa este ID para volver a entrar en otros dispositivos.</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-1">Gemini API Key</label>
+                    <input type="password" id="setting-api-key" class="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="AIzaSy...">
+                    <p class="text-xs text-gray-500 mt-1">Tu llave de Google AI. <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-600 hover:underline">Conseguir aquí</a>.</p>
+                </div>
+            </div>
+
+            <button id="save-settings-btn" class="w-full mt-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition shadow-lg">Guardar y Entrar</button>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm z-10 flex-none">
+        <div class="max-w-6xl mx-auto px-4 py-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <svg data-lucide="check-square" class="w-8 h-8 text-blue-600"></svg> Simulador Tutor IA
+                    </h1>
+                    <div class="flex items-center gap-2 mt-1">
+                         <span class="relative flex h-2 w-2">
+                          <span id="ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span id="static-dot" class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                        <p id="user-display" class="text-xs text-gray-500 font-mono">Desconectado</p>
+                    </div>
+                </div>
+                
+                <!-- Selector Materia y Config -->
+                <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
+                        <select id="subject-selector" class="bg-transparent border-none text-sm font-semibold focus:ring-0 cursor-pointer w-40">
+                            <option value="">-- Materia --</option>
+                        </select>
+                        <button id="btn-add-subject" class="bg-white border border-gray-300 rounded p-1 hover:bg-gray-100" title="Crear Nueva Materia">
+                            <svg data-lucide="plus" class="w-4 h-4 text-gray-600"></svg>
+                        </button>
+                    </div>
+                    <button id="open-settings-btn" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 border border-gray-200 transition" title="Configuración">
+                        <svg data-lucide="settings" class="w-5 h-5"></svg>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Tabs -->
+            <nav class="flex space-x-6 mt-6 border-b border-gray-200 overflow-x-auto">
+                <button id="tab-material-btn" class="tab-button active py-2 px-1">1. Material</button>
+                <button id="tab-choice-btn" class="tab-button py-2 px-1">2. Practicar Choice</button>
+                <button id="tab-review-btn" class="tab-button py-2 px-1">3. Repasar (Errores)</button>
+                <button id="tab-topics-btn" class="tab-button py-2 px-1">Administrar</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-6">
+        <div class="max-w-5xl mx-auto bg-white shadow-lg rounded-xl p-6 min-h-[500px]">
+
+            <!-- 1. MATERIAL -->
+            <div id="tab-material" class="tab-panel active space-y-4">
+                <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
+                    <p class="text-sm text-blue-700">Carga tu material aquí. La IA lo usará para generar preguntas y justificar respuestas.</p>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="font-semibold text-gray-700">Temario / Syllabus</label>
+                            <button class="upload-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" data-target="syllabus">Subir PDF</button>
+                        </div>
+                        <textarea id="syllabus" class="w-full p-2 border rounded-lg text-sm h-32" placeholder="Pega el programa de la materia..."></textarea>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="font-semibold text-gray-700">Exámenes Anteriores (Clave)</label>
+                            <button class="upload-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" data-target="experiences">Subir PDF</button>
+                        </div>
+                        <textarea id="experiences" class="w-full p-2 border rounded-lg text-sm h-32" placeholder="Pega preguntas de años anteriores..."></textarea>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="font-semibold text-gray-700">Teoría y Apuntes</label>
+                        <button class="upload-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" data-target="theory">Subir PDF</button>
+                    </div>
+                    <textarea id="theory" class="w-full p-2 border rounded-lg text-sm h-40" placeholder="Pega aquí tu resumen o teoría..."></textarea>
+                </div>
+                <button id="save-material" class="w-full py-2 bg-gray-800 text-white font-bold rounded hover:bg-gray-900 transition">Guardar Material</button>
+            </div>
+
+            <!-- 2. MODO CHOICE -->
+            <div id="tab-choice" class="tab-panel space-y-6">
+                <!-- Selector de Modo dentro de Choice -->
+                <div id="choice-menu" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div id="btn-analyze-choice" class="mode-card group">
+                        <div class="p-3 bg-purple-100 rounded-full mb-3 group-hover:bg-purple-200 transition">
+                            <svg data-lucide="scan-line" class="w-8 h-8 text-purple-600"></svg>
+                        </div>
+                        <h3 class="text-lg font-bold">Analizar Exámenes</h3>
+                        <p class="text-sm text-gray-500 mt-1">Pega un examen choice y la IA extraerá las preguntas.</p>
+                    </div>
+                    <div id="btn-generate-choice" class="mode-card group">
+                        <div class="p-3 bg-green-100 rounded-full mb-3 group-hover:bg-green-200 transition">
+                            <svg data-lucide="sparkles" class="w-8 h-8 text-green-600"></svg>
+                        </div>
+                        <h3 class="text-lg font-bold">Generar Preguntas</h3>
+                        <p class="text-sm text-gray-500 mt-1">Crear preguntas nuevas basadas en tu teoría.</p>
+                    </div>
+                    <div id="btn-practice-choice" class="mode-card group md:col-span-2 border-blue-200 bg-blue-50 hover:bg-blue-100">
+                        <div class="p-3 bg-white rounded-full mb-3 shadow-sm">
+                            <svg data-lucide="play-circle" class="w-8 h-8 text-blue-600"></svg>
+                        </div>
+                        <h3 class="text-lg font-bold text-blue-800">Ir a Práctica</h3>
+                        <p class="text-sm text-blue-600 mt-1">Responder preguntas organizadas por carpetas.</p>
+                    </div>
+                </div>
+
+                <!-- Panel Analizar/Generar -->
+                <div id="choice-tools" class="hidden space-y-4">
+                    <button class="back-to-menu text-sm text-gray-500 flex items-center hover:text-gray-800 mb-2">
+                        <svg data-lucide="arrow-left" class="w-4 h-4 mr-1"></svg> Volver
+                    </button>
+                    
+                    <!-- Herramienta: Analizar -->
+                    <div id="tool-analyze" class="hidden">
+                        <h3 class="font-bold text-lg mb-2">Analizar PDF/Texto Choice</h3>
+                        <textarea id="raw-choice-text" rows="6" class="w-full p-2 border rounded text-sm mb-2" placeholder="Pega el texto del examen aquí..."></textarea>
+                        <button id="run-analyze" class="w-full py-2 bg-purple-600 text-white font-bold rounded hover:bg-purple-700">Procesar con IA</button>
+                    </div>
+
+                    <!-- Herramienta: Generar -->
+                    <div id="tool-generate" class="hidden">
+                        <h3 class="font-bold text-lg mb-2">Generar Preguntas Nuevas</h3>
+                        <div class="flex gap-2 items-center mb-4">
+                            <label>Cantidad:</label>
+                            <select id="gen-qty" class="p-1 border rounded"><option>5</option><option>10</option><option>15</option></select>
+                        </div>
+                        <button id="run-generate" class="w-full py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700">Generar</button>
+                    </div>
+                </div>
+
+                <!-- Panel Práctica -->
+                <div id="choice-practice" class="hidden h-full">
+                    <button class="back-to-menu text-sm text-gray-500 flex items-center hover:text-gray-800 mb-4">
+                        <svg data-lucide="arrow-left" class="w-4 h-4 mr-1"></svg> Volver al menú
+                    </button>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
+                        <!-- Sidebar Temas con Carpetas -->
+                        <div class="md:col-span-1 border-r pr-4 overflow-y-auto max-h-[60vh]">
+                            <h4 class="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                                <svg data-lucide="folder-open" class="w-4 h-4"></svg> Contenido
+                            </h4>
+                            <div id="topics-list" class="space-y-1 text-sm text-gray-500">Cargando...</div>
+                        </div>
+                        <!-- Zona de Juego -->
+                        <div class="md:col-span-2 flex flex-col items-center justify-center bg-gray-50 rounded-lg p-6 min-h-[400px]" id="practice-area">
+                            <p class="text-gray-400">Selecciona un tema de la izquierda.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. REPASAR (Flashcards de errores) -->
+            <div id="tab-review" class="tab-panel space-y-4">
+                <div class="flex justify-between items-center bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                    <div>
+                        <h2 class="font-bold text-yellow-800">Repaso Espaciado (Errores)</h2>
+                        <p class="text-xs text-yellow-700">Preguntas que fallaste en el Choice se convierten en flashcards.</p>
+                    </div>
+                    <div class="text-center">
+                        <span id="review-count" class="text-2xl font-bold text-yellow-600">0</span>
+                        <span class="block text-xs">pendientes</span>
+                    </div>
+                </div>
+                <div id="review-list" class="space-y-2"></div>
+            </div>
+
+            <!-- 4. ADMINISTRAR (RENOVADO) -->
+            <div id="tab-topics" class="tab-panel space-y-4">
+                <div class="flex justify-between items-end flex-wrap gap-2">
+                    <div>
+                        <h2 class="text-xl font-bold">Gestión de Contenido</h2>
+                        <p class="text-sm text-gray-500">Organiza tus preguntas en carpetas y temas.</p>
+                    </div>
+                    <div class="flex gap-2 flex-wrap">
+                        <button id="btn-create-folder" class="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-semibold flex items-center gap-1 hover:bg-green-200">
+                            <svg data-lucide="folder-plus" class="w-4 h-4"></svg> Crear Carpeta
+                        </button>
+                        <button id="btn-move-folder" class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-semibold flex items-center gap-1 disabled:opacity-50" disabled>
+                            <svg data-lucide="folder-input" class="w-4 h-4"></svg> Mover a Carpeta
+                        </button>
+                        <button id="btn-merge-topics" class="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-sm font-semibold flex items-center gap-1 disabled:opacity-50" disabled>
+                            <svg data-lucide="merge" class="w-4 h-4"></svg> Fusionar Temas
+                        </button>
+                        <button id="btn-rename-topic" class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold flex items-center gap-1 disabled:opacity-50" disabled>
+                            <svg data-lucide="pencil" class="w-4 h-4"></svg> Renombrar
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="manager-container" class="mt-4 border rounded-lg bg-gray-50 min-h-[400px] p-4">
+                    <div id="manager-list" class="space-y-4">
+                        <!-- El contenido se inyecta por JS (Carpetas y Temas) -->
+                        <div class="loader"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals Edición -->
+    <div id="edit-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 items-center justify-center z-50 p-4">
+        <div class="bg-white p-6 rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <h3 class="text-lg font-bold mb-4">Editar Pregunta</h3>
+            <input type="hidden" id="edit-id">
+            <label class="block text-xs font-bold text-gray-500 uppercase">Pregunta</label>
+            <textarea id="edit-question" class="w-full p-2 border rounded mb-3" rows="3"></textarea>
+            
+            <label class="block text-xs font-bold text-gray-500 uppercase">Opciones (Marca la correcta)</label>
+            <div id="edit-options" class="space-y-2 mb-3"></div>
+            
+            <label class="block text-xs font-bold text-gray-500 uppercase">Justificación</label>
+            <textarea id="edit-justification" class="w-full p-2 border rounded mb-4" rows="3"></textarea>
+            
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('edit-modal').style.display='none'" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                <button id="save-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar</button>
+            </div>
+        </div>
+    </div>
+    
+    <input type="file" id="hidden-pdf-input" accept=".pdf" class="hidden">
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, deleteDoc, serverTimestamp, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+             apiKey: "AIzaSyAVbIeEAHBfKU5eDqsELTyXkAcM-m5qUUM",
+             authDomain: "simulador-examen-oral.firebaseapp.com",
+             projectId: "simulador-examen-oral",
+             storageBucket: "simulador-examen-oral.firebasestorage.app",
+             messagingSenderId: "64722873532",
+             appId: "1:64722873532:web:2f708ee4a62366598c34b9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        let userId = null;
+        let currentSubject = null;
+        let cachedQuestions = [];
+        let currentQuiz = { questions: [], index: 0, score: 0 };
+        const apiKey = ""; // Inyección de entorno
+        
+        // --- GESTIÓN DE USUARIO Y SETTINGS ---
+        function loadSettings() {
+            const storedUser = localStorage.getItem('sim_tutor_user_id');
+            const storedKey = localStorage.getItem('sim_tutor_api_key');
+            if (storedUser) {
+                userId = storedUser;
+                document.getElementById('setting-user-id').value = userId;
+            } else {
+                document.getElementById('setting-user-id').value = crypto.randomUUID().split('-')[0];
+            }
+            if (storedKey) document.getElementById('setting-api-key').value = storedKey;
+            return { userId, apiKey: storedKey };
+        }
+
+        function openSettings() {
+            loadSettings(); 
+            document.getElementById('settings-modal').style.display = 'flex';
+        }
+
+        document.getElementById('open-settings-btn').onclick = openSettings;
+        document.getElementById('generate-id-btn').onclick = () => {
+            const newId = crypto.randomUUID().split('-')[0];
+            document.getElementById('setting-user-id').value = newId;
+        };
+
+        document.getElementById('save-settings-btn').onclick = async () => {
+            const uInput = document.getElementById('setting-user-id').value.trim();
+            const kInput = document.getElementById('setting-api-key').value.trim();
+            if (!uInput) return showToast("El ID de Usuario es obligatorio.", "error");
+            localStorage.setItem('sim_tutor_user_id', uInput);
+            if (kInput) localStorage.setItem('sim_tutor_api_key', kInput);
+            else localStorage.removeItem('sim_tutor_api_key');
+            userId = uInput;
+            document.getElementById('settings-modal').style.display = 'none';
+            showToast("Configuración guardada correctamente.", "success");
+            updateUserDisplay();
+            await loadSubjects();
+        };
+        
+        function updateUserDisplay() {
+            const statusDot = document.getElementById('static-dot');
+            const pingDot = document.getElementById('ping-dot');
+            const userText = document.getElementById('user-display');
+            if (userId) {
+                statusDot.classList.replace('bg-red-500', 'bg-green-500');
+                pingDot.classList.replace('bg-red-400', 'bg-green-400');
+                userText.textContent = `ID: ${userId}`;
+                userText.classList.replace('text-gray-500', 'text-green-700');
+            } else {
+                userText.textContent = "Desconectado";
+            }
+        }
+
+        // --- INTERFAZ & NAVEGACIÓN ---
+        function switchTab(id) {
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(id + '-btn').classList.add('active');
+            document.getElementById(id).classList.add('active');
+            
+            if (id === 'tab-choice') resetChoiceView();
+            if (id === 'tab-review') loadReview();
+            if (id === 'tab-topics') loadManager();
+        }
+
+        function resetChoiceView() {
+            document.getElementById('choice-menu').style.display = 'grid';
+            document.getElementById('choice-tools').style.display = 'none';
+            document.getElementById('choice-practice').style.display = 'none';
+        }
+
+        document.getElementById('tab-material-btn').onclick = () => switchTab('tab-material');
+        document.getElementById('tab-choice-btn').onclick = () => switchTab('tab-choice');
+        document.getElementById('tab-review-btn').onclick = () => switchTab('tab-review');
+        document.getElementById('tab-topics-btn').onclick = () => switchTab('tab-topics');
+
+        document.getElementById('btn-analyze-choice').onclick = () => { 
+            document.getElementById('choice-menu').style.display = 'none'; 
+            document.getElementById('choice-tools').style.display = 'block'; 
+            document.getElementById('tool-analyze').classList.remove('hidden');
+            document.getElementById('tool-generate').classList.add('hidden');
+        };
+        document.getElementById('btn-generate-choice').onclick = () => { 
+            document.getElementById('choice-menu').style.display = 'none'; 
+            document.getElementById('choice-tools').style.display = 'block'; 
+            document.getElementById('tool-analyze').classList.add('hidden');
+            document.getElementById('tool-generate').classList.remove('hidden');
+        };
+        document.getElementById('btn-practice-choice').onclick = async () => { 
+            document.getElementById('choice-menu').style.display = 'none'; 
+            document.getElementById('choice-practice').style.display = 'block';
+            await loadTopicsList();
+        };
+        document.querySelectorAll('.back-to-menu').forEach(b => b.onclick = resetChoiceView);
+
+        // --- MATERIAS & CARGA ---
+        async function init() {
+            try {
+                await signInAnonymously(auth);
+                const settings = loadSettings();
+                if (!localStorage.getItem('sim_tutor_user_id')) {
+                    document.getElementById('settings-modal').style.display = 'flex';
+                } else {
+                    userId = settings.userId;
+                    updateUserDisplay();
+                    await loadSubjects();
+                }
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            } catch (e) { console.error("Auth failed", e); }
+        }
+        
+        document.getElementById('btn-add-subject').onclick = () => {
+             document.getElementById('new-subject-input').value = '';
+             document.getElementById('new-subject-modal').style.display = 'flex';
+             document.getElementById('new-subject-input').focus();
+        };
+
+        document.getElementById('confirm-new-subject').onclick = async () => {
+            const name = document.getElementById('new-subject-input').value.trim();
+            if(!name) return;
+            if(!userId) return showToast("Debes configurar un usuario primero.", "error");
+            document.getElementById('new-subject-modal').style.display = 'none';
+            try {
+                await setDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', name), { created: serverTimestamp() });
+                await loadSubjects();
+                document.getElementById('subject-selector').value = name;
+                currentSubject = name;
+                showToast(`Materia "${name}" creada.`, "success");
+            } catch (e) {
+                console.error(e);
+                showToast("Error al crear materia.", "error");
+            }
+        };
+        
+        async function loadSubjects() {
+            if (!userId) return;
+            const sel = document.getElementById('subject-selector');
+            sel.innerHTML = '<option value="">-- Materia --</option>';
+            try {
+                const snap = await getDocs(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects'));
+                snap.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = d.id; opt.textContent = d.id;
+                    sel.appendChild(opt);
+                });
+            } catch (e) { console.error(e); }
+            sel.onchange = async () => {
+                currentSubject = sel.value;
+                if (currentSubject) await loadMaterial();
+            };
+        }
+
+        async function loadMaterial() {
+            if (!currentSubject || !userId) return;
+            const fields = ['syllabus', 'experiences', 'theory'];
+            for (const f of fields) {
+                try {
+                    const d = await getDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'materials', f));
+                    document.getElementById(f).value = d.exists() ? d.data().content : '';
+                } catch (e) {}
+            }
+        }
+        
+        document.getElementById('save-material').onclick = async () => {
+            if (!currentSubject) return showToast("Selecciona una materia primero.", "error");
+            const btn = document.getElementById('save-material');
+            btn.textContent = "Guardando..."; btn.disabled = true;
+            const batch = writeBatch(db);
+            ['syllabus', 'experiences', 'theory'].forEach(f => {
+                const val = document.getElementById(f).value;
+                const ref = doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'materials', f);
+                batch.set(ref, { content: val });
+            });
+            await batch.commit();
+            showToast("Material guardado correctamente.", "success");
+            btn.textContent = "Guardar Material"; btn.disabled = false;
+        };
+
+        // --- LÓGICA CHOICE ---
+        
+        document.getElementById('run-analyze').onclick = async () => {
+            if (!currentSubject) return showToast("Selecciona una materia.", "error");
+            const text = document.getElementById('raw-choice-text').value;
+            if (!text.trim()) return;
+            showProgress("Analizando Examen", "Consultando IA...", 20);
+            try {
+                const syllabus = document.getElementById('syllabus').value;
+                const prompt = `Analiza este texto de examen multiple choice. Contexto del programa: ${syllabus.substring(0, 5000)}.
+                Extrae preguntas, opciones, respuesta correcta (indice 0-based) y tema.
+                Responde JSON Array: [{ "question": "...", "options": ["A", "B"], "correctIndex": 0, "topic": "...", "justification": "..." }]
+                Texto: ${text}`;
+                const json = await callGemini(prompt, true);
+                await saveQuestions(json);
+                hideProgress();
+                showToast(`¡Éxito! Se importaron ${json.length} preguntas.`, "success");
+                document.getElementById('raw-choice-text').value = '';
+                resetChoiceView();
+            } catch (e) {
+                hideProgress(); showToast("Error: " + e.message, "error");
+            }
+        };
+
+        document.getElementById('run-generate').onclick = async () => {
+             if (!currentSubject) return showToast("Selecciona una materia.", "error");
+             const qty = document.getElementById('gen-qty').value;
+             showProgress("Generando", "Creando preguntas...", 30);
+             try {
+                const context = document.getElementById('experiences').value + "\n" + document.getElementById('theory').value;
+                const prompt = `Genera ${qty} preguntas multiple choice difíciles basadas en: ${context.substring(0, 20000)}.
+                Incluye justificación detallada. Responde JSON Array: [{ "question": "...", "options": ["..."], "correctIndex": 0, "topic": "...", "justification": "..." }]`;
+                const json = await callGemini(prompt, true);
+                await saveQuestions(json);
+                hideProgress();
+                showToast("Preguntas generadas.", "success");
+                resetChoiceView();
+             } catch (e) { hideProgress(); showToast("Error: " + e.message, "error"); }
+        };
+
+        async function saveQuestions(questions) {
+            const batch = writeBatch(db);
+            questions.forEach(q => {
+                const ref = doc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'));
+                batch.set(ref, { ...q, createdAt: serverTimestamp(), status: 'new', container: 'Sin Carpeta' }); // Default container
+            });
+            await batch.commit();
+        }
+
+        // --- NUEVA LÓGICA DE PRÁCTICA (JERÁRQUICA) ---
+        async function loadTopicsList() {
+            const list = document.getElementById('topics-list');
+            list.innerHTML = '<div class="loader"></div>';
+            
+            if (!currentSubject || !userId) {
+                 list.innerHTML = '<p class="text-sm text-gray-400 p-4">Por favor selecciona una materia arriba.</p>';
+                 return; 
+            }
+
+            // 1. Cargar Preguntas
+            const snap = await getDocs(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'));
+            cachedQuestions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            
+            // 2. Cargar Carpetas (para incluir vacías si queremos, aunque para práctica suelen ocultarse)
+            const foldersSnap = await getDocs(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders'));
+            const folders = new Set();
+            foldersSnap.forEach(d => folders.add(d.id)); // ID es el nombre de la carpeta
+
+            // Agrupar: Contenedor -> Tema -> Stats
+            const tree = {};
+            cachedQuestions.forEach(q => {
+                const cont = q.container || 'Sin Carpeta';
+                const topic = q.topic || 'General';
+                
+                if (!tree[cont]) tree[cont] = {};
+                if (!tree[cont][topic]) tree[cont][topic] = { total: 0, done: 0 };
+                
+                tree[cont][topic].total++;
+                if (q.status === 'mastered') tree[cont][topic].done++;
+            });
+            
+            // Asegurarnos de que carpetas vacías (que se crearon manualmente) estén en el árbol aunque no tengan preguntas (opcional, pero consistente)
+            folders.forEach(f => {
+                if (!tree[f]) tree[f] = {}; 
+            });
+
+            list.innerHTML = '';
+            
+            // Orden: "Sin Carpeta" primero, luego alfabético
+            const containers = Object.keys(tree).sort((a, b) => {
+                if (a === 'Sin Carpeta') return -1;
+                if (b === 'Sin Carpeta') return 1;
+                return a.localeCompare(b);
+            });
+            
+            if(containers.length === 0) { list.innerHTML = '<p class="text-sm text-gray-400">No hay preguntas.</p>'; return; }
+
+            containers.forEach(contName => {
+                // Si es carpeta vacía en Modo Práctica, quizá ocultarla para no estorbar, o mostrar "Vacía"
+                const hasTopics = Object.keys(tree[contName]).length > 0;
+                
+                const folderBtn = document.createElement('button');
+                folderBtn.className = 'sidebar-folder-btn';
+                folderBtn.innerHTML = `<span><i data-lucide="folder" class="inline w-3 h-3 mr-1 text-blue-500"></i>${contName}</span> <i data-lucide="chevron-down" class="w-4 h-4 transform transition-transform"></i>`;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'sidebar-folder-content';
+                
+                if (!hasTopics) {
+                    contentDiv.innerHTML = '<p class="text-xs text-gray-400 p-2 italic">Carpeta vacía</p>';
+                } else {
+                    const topics = tree[contName];
+                    Object.keys(topics).sort().forEach(tName => {
+                        const tData = topics[tName];
+                        const tBtn = document.createElement('button');
+                        tBtn.className = 'sidebar-topic-btn';
+                        tBtn.innerHTML = `<span>${tName}</span> <span class="text-xs bg-gray-200 px-1.5 rounded text-gray-600">${tData.done}/${tData.total}</span>`;
+                        tBtn.onclick = () => startQuiz(tName, contName);
+                        contentDiv.appendChild(tBtn);
+                    });
+                }
+
+                folderBtn.onclick = () => {
+                    contentDiv.classList.toggle('open');
+                    const icon = folderBtn.querySelector('[data-lucide="chevron-down"]');
+                    if(contentDiv.classList.contains('open')) icon.style.transform = 'rotate(180deg)';
+                    else icon.style.transform = 'rotate(0deg)';
+                };
+
+                list.appendChild(folderBtn);
+                list.appendChild(contentDiv);
+            });
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function startQuiz(topic, container) {
+            // Filtrar por Tema Y Contenedor para evitar colisiones de nombres
+            currentQuiz.questions = cachedQuestions.filter(q => {
+                const qCont = q.container || 'Sin Carpeta';
+                const qTop = q.topic || 'General';
+                return qTop === topic && qCont === container && q.status !== 'mastered';
+            });
+            
+            // Si terminó, repasar todas
+            if (currentQuiz.questions.length === 0) {
+                 currentQuiz.questions = cachedQuestions.filter(q => {
+                    const qCont = q.container || 'Sin Carpeta';
+                    const qTop = q.topic || 'General';
+                    return qTop === topic && qCont === container;
+                });
+            }
+            
+            currentQuiz.questions.sort(() => Math.random() - 0.5);
+            currentQuiz.index = 0;
+            currentQuiz.score = 0;
+            renderQuestion();
+        }
+
+        function renderQuestion() {
+            const area = document.getElementById('practice-area');
+            if (currentQuiz.index >= currentQuiz.questions.length) {
+                area.innerHTML = `<div class="text-center"><h3 class="text-2xl font-bold mb-2">¡Fin del tema!</h3><p>Aciertos: ${currentQuiz.score}/${currentQuiz.questions.length}</p><button class="mt-4 px-4 py-2 bg-blue-600 text-white rounded" onclick="resetChoiceView()">Volver</button></div>`;
+                return;
+            }
+            
+            const q = currentQuiz.questions[currentQuiz.index];
+            area.innerHTML = `
+                <div class="w-full max-w-2xl bg-white p-6 rounded-lg shadow border text-left">
+                    <div class="flex justify-between text-xs text-gray-400 mb-4">
+                        <span>${q.container || 'Sin Carpeta'} > ${q.topic || 'General'}</span>
+                        <span>${currentQuiz.index + 1}/${currentQuiz.questions.length}</span>
+                    </div>
+                    <h3 class="text-lg font-bold mb-6">${q.question}</h3>
+                    <div class="space-y-2">
+                        ${q.options.map((opt, i) => `
+                            <div class="mcq-option" onclick="checkAnswer(this, ${i})">
+                                <span class="font-bold mr-3 text-gray-400">${String.fromCharCode(65+i)}.</span> ${opt}
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div id="feedback-area" class="mt-4 hidden p-4 bg-gray-50 rounded text-sm">
+                        <p class="font-bold mb-1" id="feedback-title"></p>
+                        <p>${q.justification || 'Sin justificación.'}</p>
+                        <button id="next-btn" class="mt-3 px-4 py-2 bg-blue-600 text-white rounded text-xs font-bold float-right">Siguiente</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.checkAnswer = async (el, idx) => {
+            const q = currentQuiz.questions[currentQuiz.index];
+            const isCorrect = idx === q.correctIndex;
+            document.querySelectorAll('.mcq-option').forEach(o => o.style.pointerEvents = 'none');
+            el.classList.add(isCorrect ? 'correct' : 'incorrect');
+            if (!isCorrect) {
+                document.querySelectorAll('.mcq-option')[q.correctIndex].classList.add('correct');
+                await createErrorFlashcard(q);
+            } else {
+                currentQuiz.score++;
+                if (q.status !== 'mastered') {
+                    updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq', q.id), { status: 'mastered' });
+                }
+            }
+            const fb = document.getElementById('feedback-area');
+            fb.classList.remove('hidden');
+            fb.classList.add(isCorrect ? 'bg-green-50' : 'bg-red-50');
+            document.getElementById('feedback-title').textContent = isCorrect ? "¡Correcto!" : "Incorrecto";
+            document.getElementById('feedback-title').className = isCorrect ? "font-bold text-green-700" : "font-bold text-red-700";
+            document.getElementById('next-btn').onclick = () => { currentQuiz.index++; renderQuestion(); };
+        };
+
+        async function createErrorFlashcard(q) {
+            const ref = collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_questions');
+            await setDoc(doc(ref), {
+                question: q.question,
+                answer: `Correcta: ${q.options[q.correctIndex]} \n\n Por qué: ${q.justification}`,
+                topic: q.topic,
+                nextReviewDate: serverTimestamp(),
+                reviewStep: 0
+            });
+        }
+
+        // --- REPASO (SRS) ---
+        async function loadReview() {
+            const list = document.getElementById('review-list');
+            list.innerHTML = '<div class="loader"></div>';
+            if (!currentSubject || !userId) return list.innerHTML = '<p class="text-center text-gray-400 py-10">Selecciona una materia.</p>';
+            const now = new Date();
+            const qRef = query(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_questions'), where('nextReviewDate', '<=', now));
+            const snap = await getDocs(qRef);
+            const cards = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            document.getElementById('review-count').textContent = cards.length;
+            list.innerHTML = '';
+            if (cards.length === 0) { list.innerHTML = '<p class="text-center text-gray-400 py-10">¡Todo al día! No hay errores pendientes.</p>'; return; }
+            let cardIndex = 0;
+            const renderCard = () => {
+                if (cardIndex >= cards.length) { loadReview(); return; }
+                const c = cards[cardIndex];
+                list.innerHTML = `
+                    <div class="qa-card max-w-xl mx-auto border-l-4 border-yellow-400">
+                        <div class="text-xs text-gray-400 mb-2 uppercase tracking-wide">Repaso de Error - ${c.topic || 'General'}</div>
+                        <p class="font-bold text-lg text-gray-800 mb-4">${c.question}</p>
+                        <button id="show-ans" class="w-full py-2 border border-gray-300 rounded text-gray-600 font-bold hover:bg-gray-50">Mostrar Respuesta</button>
+                        <div id="ans-panel" class="hidden mt-4 pt-4 border-t border-gray-100">
+                            <div class="text-sm text-gray-700 bg-gray-50 p-3 rounded mb-4 whitespace-pre-line">${c.answer}</div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button class="py-2 bg-red-100 text-red-700 rounded font-bold text-xs" onclick="rateCard('${c.id}', 0)">Olvidé (1m)</button>
+                                <button class="py-2 bg-yellow-100 text-yellow-700 rounded font-bold text-xs" onclick="rateCard('${c.id}', 1)">Difícil (1d)</button>
+                                <button class="py-2 bg-green-100 text-green-700 rounded font-bold text-xs" onclick="rateCard('${c.id}', 3)">Fácil (3d)</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('show-ans').onclick = function() { this.style.display='none'; document.getElementById('ans-panel').classList.remove('hidden'); };
+            };
+            window.rateCard = async (id, days) => {
+                const nextDate = new Date();
+                nextDate.setDate(nextDate.getDate() + (days === 0 ? 0 : days));
+                if (days === 0) nextDate.setMinutes(nextDate.getMinutes() + 10);
+                await updateDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_questions', id), {
+                    nextReviewDate: nextDate,
+                    reviewStep: days > 0 ? 1 : 0
+                });
+                cardIndex++;
+                renderCard();
+            };
+            renderCard();
+        }
+
+        // --- ADMINISTRADOR (RENOVADO - CARPETAS) ---
+        async function loadManager() {
+            const container = document.getElementById('manager-list');
+            container.innerHTML = '<div class="loader"></div>';
+            
+            if (!currentSubject || !userId) {
+                 container.innerHTML = '<p class="text-center text-gray-400 py-10">Selecciona una materia para administrar.</p>'; 
+                 return;
+            }
+            
+            // 1. Cargar Preguntas
+            const snap = await getDocs(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'));
+            const questions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            
+            // 2. Cargar Carpetas Vacías (colección aparte para persistencia)
+            const foldersSnap = await getDocs(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders'));
+            const folders = new Set();
+            foldersSnap.forEach(d => folders.add(d.id)); // ID es nombre
+
+            // Agrupar preguntas por Contenedor -> Tema
+            const tree = {};
+            questions.forEach(q => {
+                const c = q.container || 'Sin Carpeta';
+                const t = q.topic || 'General';
+                if(!tree[c]) tree[c] = {};
+                if(!tree[c][t]) tree[c][t] = [];
+                tree[c][t].push(q);
+            });
+            
+            // Asegurar que carpetas vacías existan en el árbol
+            folders.forEach(f => {
+                if (!tree[f]) tree[f] = {};
+            });
+
+            container.innerHTML = '';
+            
+            // Orden: "Sin Carpeta" primero, luego alfabético
+            const folderNames = Object.keys(tree).sort((a, b) => {
+                if (a === 'Sin Carpeta') return -1;
+                if (b === 'Sin Carpeta') return 1;
+                return a.localeCompare(b);
+            });
+            
+            if(folderNames.length === 0) {
+                 container.innerHTML = '<p class="text-center text-gray-400">No hay preguntas para administrar. Usa "Crear Carpeta" para empezar.</p>'; 
+            }
+
+            folderNames.forEach(fName => {
+                const hasTopics = Object.keys(tree[fName]).length > 0;
+                
+                // Cabecera Carpeta
+                const folderHeader = document.createElement('div');
+                folderHeader.className = 'folder-header group'; // group for hovering edit icon
+                folderHeader.innerHTML = `
+                    <div class="flex items-center">
+                        <i data-lucide="folder" class="inline w-4 h-4 mr-2 text-blue-600"></i>
+                        <span>${fName}</span>
+                        <button class="ml-2 text-gray-400 hover:text-blue-600 p-1 rounded-full transition-colors rename-folder-btn" data-folder="${fName}" title="Renombrar carpeta">
+                            <svg data-lucide="pencil" class="w-3 h-3"></svg>
+                        </button>
+                    </div>
+                    <span class="text-xs text-gray-500 font-normal">(${Object.keys(tree[fName]).length} temas)</span>
+                `;
+                
+                const folderContent = document.createElement('div');
+                folderContent.className = 'folder-content';
+                
+                if (!hasTopics) {
+                    folderContent.innerHTML = '<p class="text-xs text-gray-400 p-2 italic">Carpeta vacía</p>';
+                } else {
+                    // Lista de Temas
+                    const topicNames = Object.keys(tree[fName]).sort();
+                    topicNames.forEach(tName => {
+                        const tDiv = document.createElement('div');
+                        tDiv.className = 'topic-item';
+                        tDiv.innerHTML = `
+                            <div class="flex items-center gap-2 w-full">
+                                <input type="checkbox" class="topic-check" data-topic="${tName}" data-container="${fName}">
+                                <span class="text-sm font-medium flex-1">${tName}</span>
+                                <span class="text-xs text-gray-400">(${tree[fName][tName].length} pregs)</span>
+                            </div>
+                        `;
+                        folderContent.appendChild(tDiv);
+                    });
+                }
+                
+                // Abrir/Cerrar al click (excepto si click en editar)
+                folderHeader.onclick = (e) => {
+                    if (e.target.closest('.rename-folder-btn')) return;
+                    folderContent.classList.toggle('open');
+                };
+                
+                // Renombrar Carpeta
+                const renameBtn = folderHeader.querySelector('.rename-folder-btn');
+                renameBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    renameFolder(fName);
+                };
+                
+                container.appendChild(folderHeader);
+                container.appendChild(folderContent);
+            });
+            
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+
+            // Lógica de Selección
+            document.querySelectorAll('.topic-check').forEach(chk => {
+                chk.onchange = updateManagerToolbar;
+            });
+        }
+        
+        function updateManagerToolbar() {
+            const checked = document.querySelectorAll('.topic-check:checked');
+            document.getElementById('btn-move-folder').disabled = checked.length === 0;
+            document.getElementById('btn-rename-topic').disabled = checked.length !== 1;
+            document.getElementById('btn-merge-topics').disabled = checked.length < 2; // Minimo 2 para fusionar
+        }
+        
+        // --- CREAR CARPETA ---
+        document.getElementById('btn-create-folder').onclick = () => {
+            document.getElementById('create-folder-input').value = '';
+            document.getElementById('new-folder-modal').style.display = 'flex';
+            document.getElementById('create-folder-input').focus();
+        };
+
+        document.getElementById('confirm-create-folder').onclick = async () => {
+            const name = document.getElementById('create-folder-input').value.trim();
+            if (!name) return;
+            
+            document.getElementById('new-folder-modal').style.display = 'none';
+            showProgress("Creando...", "Guardando carpeta...", 50);
+            
+            try {
+                // Guardar en colección dedicada para persistencia de vacías
+                await setDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', name), {
+                    created: serverTimestamp()
+                });
+                
+                hideProgress();
+                showToast(`Carpeta "${name}" creada.`, "success");
+                loadManager();
+            } catch (e) {
+                hideProgress();
+                console.error(e);
+                showToast("Error creando carpeta.", "error");
+            }
+        };
+
+        // --- FUSIONAR TEMAS (MERGE) ---
+        document.getElementById('btn-merge-topics').onclick = async () => {
+            const checked = Array.from(document.querySelectorAll('.topic-check:checked'));
+            if(checked.length < 2) return;
+            
+            // Nombres seleccionados
+            const topicsToMerge = new Set(checked.map(c => c.dataset.topic));
+            
+            // Sugerir el nombre del primero
+            const firstTopic = checked[0].dataset.topic;
+            const newName = prompt(`Fusionar ${topicsToMerge.size} temas en uno nuevo llamado:`, firstTopic);
+            
+            if(!newName || !newName.trim()) return;
+            
+            showProgress("Fusionando...", "Unificando preguntas...", 30);
+            
+            const batch = writeBatch(db);
+            let count = 0;
+            
+            // Iterar sobre selección para buscar y actualizar
+            // Nota: Hacemos queries individuales para seguridad, aunque batch es limitado (500 ops). Asumimos uso razonable.
+            for (const item of checked) {
+                const oldTopic = item.dataset.topic;
+                // Aquí estaba el bug de lógica en "Move", en Merge también podría pasar. 
+                // Usamos query segura.
+                
+                const q = query(
+                    collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'),
+                    where('topic', '==', oldTopic)
+                );
+                const snap = await getDocs(q);
+                snap.forEach(doc => {
+                    // Solo actualizar si está en el contenedor correcto si se desea, pero para "Merge Topics" usualmente es global o por contexto
+                    // Simplificación: Merge por nombre de tema dentro del contenedor actual visualizado
+                    // Pero el checkbox tiene data-container. Usemos eso.
+                    const data = doc.data();
+                    const docContainer = data.container || 'Sin Carpeta';
+                    if (docContainer === item.dataset.container) {
+                        batch.update(doc.ref, { topic: newName });
+                        count++;
+                    }
+                });
+            }
+            
+            await batch.commit();
+            hideProgress();
+            showToast(`¡Listo! ${count} preguntas unificadas en "${newName}".`, "success");
+            loadManager();
+        };
+        
+        // --- MOVER A CARPETA (CORREGIDO) ---
+        document.getElementById('btn-move-folder').onclick = () => {
+             const checked = document.querySelectorAll('.topic-check:checked');
+             if(checked.length === 0) return;
+             
+             // Poblar select con carpetas existentes (desde el DOM headers)
+             const existingFolders = new Set();
+             document.querySelectorAll('.folder-header span span').forEach(el => { 
+                 // Ajuste selector: el span dentro del header
+                 if(el.innerText) existingFolders.add(el.innerText.trim());
+             });
+             // También agregar "Sin Carpeta" explícitamente si no está
+             existingFolders.add('Sin Carpeta');
+             
+             const sel = document.getElementById('existing-folder-select');
+             sel.innerHTML = '<option value="">-- Seleccionar --</option>';
+             existingFolders.forEach(f => {
+                 if(f) sel.innerHTML += `<option value="${f}">${f}</option>`;
+             });
+             
+             document.getElementById('move-folder-modal').style.display = 'flex';
+        };
+        
+        document.querySelectorAll('input[name="folder-dest"]').forEach(radio => {
+            radio.onchange = (e) => {
+                const isNew = e.target.value === 'new';
+                document.getElementById('new-folder-input').disabled = !isNew;
+                document.getElementById('existing-folder-select').disabled = isNew;
+            };
+        });
+
+        document.getElementById('confirm-move-folder').onclick = async () => {
+            const mode = document.querySelector('input[name="folder-dest"]:checked').value;
+            let targetFolder = '';
+            
+            if (mode === 'new') {
+                targetFolder = document.getElementById('new-folder-input').value.trim();
+                if (!targetFolder) return alert("Escribe un nombre para la carpeta");
+                
+                // Si es nueva, la registramos también en collection 'folders' para consistencia
+                setDoc(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', targetFolder), { created: serverTimestamp() });
+            } else {
+                targetFolder = document.getElementById('existing-folder-select').value;
+                if (!targetFolder) return alert("Selecciona una carpeta");
+            }
+            
+            document.getElementById('move-folder-modal').style.display = 'none';
+            showProgress("Moviendo...", "Actualizando base de datos...", 50);
+            
+            const selected = Array.from(document.querySelectorAll('.topic-check:checked')).map(c => ({
+                topic: c.dataset.topic,
+                currentContainer: c.dataset.container
+            }));
+            
+            const batch = writeBatch(db);
+            for (const item of selected) {
+                // Query solo por topic, filtramos contenedor en memoria para asegurar compatibilidad con undefined
+                const q = query(
+                    collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'),
+                    where('topic', '==', item.topic)
+                );
+                const snap = await getDocs(q);
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    // Lógica robusta: si data.container es undefined/null, es "Sin Carpeta"
+                    const docContainer = data.container || 'Sin Carpeta';
+                    
+                    if (docContainer === item.currentContainer) {
+                        batch.update(doc.ref, { container: targetFolder });
+                    }
+                });
+            }
+            
+            await batch.commit();
+            hideProgress();
+            showToast(`Movidos a "${targetFolder}"`, "success");
+            loadManager();
+        };
+
+        // --- RENOMBRAR CARPETA ---
+        async function renameFolder(oldName) {
+            const newName = prompt(`Nuevo nombre para la carpeta "${oldName}":`, oldName);
+            if (!newName || newName === oldName || !newName.trim()) return;
+            
+            showProgress("Renombrando...", "Actualizando carpeta...", 30);
+            
+            try {
+                const batch = writeBatch(db);
+                
+                // 1. Crear nueva entrada en 'folders'
+                const newFolderRef = doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', newName);
+                batch.set(newFolderRef, { created: serverTimestamp() });
+                
+                // 2. Borrar antigua entrada en 'folders' (si existe)
+                if (oldName !== 'Sin Carpeta') {
+                    const oldFolderRef = doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', oldName);
+                    batch.delete(oldFolderRef);
+                }
+                
+                // 3. Actualizar todas las preguntas con ese container
+                // Como no podemos buscar por "container == oldName" si oldName es "Sin Carpeta" (porque podría ser null),
+                // hacemos query general o iteramos con cuidado.
+                // Para optimizar, buscamos donde container == oldName. Si es "Sin Carpeta", buscamos null.
+                // Firestore no busca null facil. Buscaremos todas y filtraremos o buscaremos por lotes.
+                // Mejor estrategia: buscar todos los docs de la materia y filtrar en memoria (si no son miles).
+                // O mejor: Si es "Sin Carpeta", buscamos solo las que no tienen container (difícil). 
+                // Asumiremos que si el usuario renombra "Sin Carpeta", quiere mover todo lo suelto a una nueva.
+                
+                // Vamos a usar getDocs general de saved_mcq. Es lo más seguro para consistencia.
+                const q = collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq');
+                const snap = await getDocs(q);
+                
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    const docContainer = data.container || 'Sin Carpeta';
+                    
+                    if (docContainer === oldName) {
+                        batch.update(doc.ref, { container: newName });
+                    }
+                });
+                
+                await batch.commit();
+                hideProgress();
+                showToast("Carpeta renombrada.", "success");
+                loadManager();
+                
+            } catch (e) {
+                hideProgress();
+                console.error(e);
+                showToast("Error al renombrar.", "error");
+            }
+        }
+
+        // --- RENOMBRAR TEMA ---
+        document.getElementById('btn-rename-topic').onclick = async () => {
+            const checked = document.querySelector('.topic-check:checked');
+            if(!checked) return;
+            
+            const oldName = checked.dataset.topic;
+            const container = checked.dataset.container;
+            
+            const newName = prompt(`Renombrar tema "${oldName}" a:`, oldName);
+            if(!newName || newName === oldName) return;
+            
+            showProgress("Renombrando...", "Actualizando preguntas...", 50);
+            
+            const q = query(
+                collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'),
+                where('topic', '==', oldName)
+            );
+            
+            const snap = await getDocs(q);
+            const batch = writeBatch(db);
+            snap.forEach(doc => {
+                const data = doc.data();
+                const docContainer = data.container || 'Sin Carpeta';
+                if (docContainer === container) {
+                    batch.update(doc.ref, { topic: newName });
+                }
+            });
+            
+            await batch.commit();
+            hideProgress();
+            showToast("Tema renombrado.", "success");
+            loadManager();
+        };
+
+        // --- UTILS ---
+        function showProgress(t, s, p) {
+            document.getElementById('progress-modal').style.display = 'flex';
+            document.getElementById('progress-title').textContent = t;
+            document.getElementById('progress-step').textContent = s;
+            document.getElementById('progress-bar-fill').style.width = p + '%';
+        }
+        function hideProgress() { document.getElementById('progress-modal').style.display = 'none'; }
+        
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.className = `show ${type}`;
+            t.textContent = msg;
+            setTimeout(() => { t.className = t.className.replace('show', ''); }, 3000);
+        }
+
+        async function callGemini(userQuery, expectJson) {
+            const storedKey = localStorage.getItem('sim_tutor_api_key');
+            const finalKey = storedKey || (typeof apiKey !== 'undefined' ? apiKey : "");
+            
+            if (!finalKey) throw new Error("Falta la API Key. Ve a Configuración (⚙️) y añádela.");
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${finalKey}`;
+            const payload = { 
+                contents: [{ parts: [{ text: userQuery }] }],
+                generationConfig: expectJson ? { responseMimeType: "application/json" } : {}
+            };
+            
+            let retries = 3;
+            let delay = 1000;
+            
+            while (retries > 0) {
+                try {
+                    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!resp.ok) throw new Error(`API Error: ${resp.status}`);
+                    const result = await resp.json();
+                    const text = result.candidates[0].content.parts[0].text;
+                    return expectJson ? JSON.parse(text) : text;
+                } catch (error) {
+                    console.warn(`Retry Gemini... ${error}`);
+                    retries--;
+                    if (retries === 0) throw error;
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+        
+        document.querySelectorAll('.upload-btn').forEach(b => {
+            b.onclick = () => {
+                const input = document.getElementById('hidden-pdf-input');
+                input.onchange = async (e) => {
+                    if (e.target.files[0]) {
+                        const t = document.getElementById(b.dataset.target);
+                        t.value = "Leyendo PDF...";
+                        const buf = await e.target.files[0].arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument(buf).promise;
+                        let txt = "";
+                        for(let i=1; i<=pdf.numPages; i++) txt += (await (await pdf.getPage(i)).getTextContent()).items.map(s=>s.str).join(' ');
+                        t.value = txt;
+                    }
+                };
+                input.click();
+            };
+        });
+
+        init();
+    </script>
+</body>
+</html>
