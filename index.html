@@ -67,6 +67,7 @@
             background-color: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
             padding: 10px 14px; border-radius: 8px; font-weight: 700;
             display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;
+            cursor: pointer; /* Explicit cursor */
         }
         .folder-header:hover { background-color: #dbeafe; }
         .folder-content {
@@ -943,17 +944,28 @@
 
             folderNames.forEach(fName => {
                 const hasTopics = Object.keys(tree[fName]).length > 0;
-                
+                let actionButtons = '';
+                if (fName !== 'Sin Carpeta') {
+                    actionButtons = `
+                        <button class="ml-2 text-gray-400 hover:text-blue-600 p-1 rounded-full transition-colors rename-folder-btn" data-folder="${fName}" title="Renombrar">
+                            <svg data-lucide="pencil" class="w-3 h-3"></svg>
+                        </button>
+                        <button class="ml-1 text-gray-400 hover:text-red-600 p-1 rounded-full transition-colors delete-folder-btn" data-folder="${fName}" title="Eliminar">
+                            <svg data-lucide="trash-2" class="w-3 h-3"></svg>
+                        </button>
+                    `;
+                }
+
                 // Cabecera Carpeta
                 const folderHeader = document.createElement('div');
                 folderHeader.className = 'folder-header group'; // group for hovering edit icon
                 folderHeader.innerHTML = `
                     <div class="flex items-center">
                         <i data-lucide="folder" class="inline w-4 h-4 mr-2 text-blue-600"></i>
-                        <span>${fName}</span>
-                        <button class="ml-2 text-gray-400 hover:text-blue-600 p-1 rounded-full transition-colors rename-folder-btn" data-folder="${fName}" title="Renombrar carpeta">
-                            <svg data-lucide="pencil" class="w-3 h-3"></svg>
-                        </button>
+                        <span class="folder-title-text font-semibold text-gray-700">${fName}</span>
+                        <div class="flex items-center ml-3 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            ${actionButtons}
+                        </div>
                     </div>
                     <span class="text-xs text-gray-500 font-normal">(${Object.keys(tree[fName]).length} temas)</span>
                 `;
@@ -980,18 +992,29 @@
                     });
                 }
                 
-                // Abrir/Cerrar al click (excepto si click en editar)
+                // Abrir/Cerrar al click (excepto si click en editar o borrar)
                 folderHeader.onclick = (e) => {
-                    if (e.target.closest('.rename-folder-btn')) return;
+                    if (e.target.closest('.rename-folder-btn') || e.target.closest('.delete-folder-btn')) return;
                     folderContent.classList.toggle('open');
                 };
                 
                 // Renombrar Carpeta
                 const renameBtn = folderHeader.querySelector('.rename-folder-btn');
-                renameBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    renameFolder(fName);
-                };
+                if (renameBtn) {
+                    renameBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        renameFolder(fName);
+                    };
+                }
+
+                // Eliminar Carpeta
+                const deleteBtn = folderHeader.querySelector('.delete-folder-btn');
+                if (deleteBtn) {
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteFolder(fName);
+                    };
+                }
                 
                 container.appendChild(folderHeader);
                 container.appendChild(folderContent);
@@ -1065,8 +1088,7 @@
             // Nota: Hacemos queries individuales para seguridad, aunque batch es limitado (500 ops). Asumimos uso razonable.
             for (const item of checked) {
                 const oldTopic = item.dataset.topic;
-                // Aquí estaba el bug de lógica en "Move", en Merge también podría pasar. 
-                // Usamos query segura.
+                const oldContainer = item.dataset.container;
                 
                 const q = query(
                     collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'),
@@ -1074,12 +1096,10 @@
                 );
                 const snap = await getDocs(q);
                 snap.forEach(doc => {
-                    // Solo actualizar si está en el contenedor correcto si se desea, pero para "Merge Topics" usualmente es global o por contexto
-                    // Simplificación: Merge por nombre de tema dentro del contenedor actual visualizado
-                    // Pero el checkbox tiene data-container. Usemos eso.
                     const data = doc.data();
                     const docContainer = data.container || 'Sin Carpeta';
-                    if (docContainer === item.dataset.container) {
+                    // Comparar con el container que tenía el checkbox (maneja 'Sin Carpeta' correctamente)
+                    if (docContainer === oldContainer) {
                         batch.update(doc.ref, { topic: newName });
                         count++;
                     }
@@ -1099,8 +1119,7 @@
              
              // Poblar select con carpetas existentes (desde el DOM headers)
              const existingFolders = new Set();
-             document.querySelectorAll('.folder-header span span').forEach(el => { 
-                 // Ajuste selector: el span dentro del header
+             document.querySelectorAll('.folder-title-text').forEach(el => { 
                  if(el.innerText) existingFolders.add(el.innerText.trim());
              });
              // También agregar "Sin Carpeta" explícitamente si no está
@@ -1173,6 +1192,10 @@
 
         // --- RENOMBRAR CARPETA ---
         async function renameFolder(oldName) {
+            if (oldName === 'Sin Carpeta') {
+                return alert("No puedes renombrar la carpeta por defecto 'Sin Carpeta'. Mueve su contenido a otra carpeta si deseas organizarlo.");
+            }
+
             const newName = prompt(`Nuevo nombre para la carpeta "${oldName}":`, oldName);
             if (!newName || newName === oldName || !newName.trim()) return;
             
@@ -1186,21 +1209,10 @@
                 batch.set(newFolderRef, { created: serverTimestamp() });
                 
                 // 2. Borrar antigua entrada en 'folders' (si existe)
-                if (oldName !== 'Sin Carpeta') {
-                    const oldFolderRef = doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', oldName);
-                    batch.delete(oldFolderRef);
-                }
+                const oldFolderRef = doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', oldName);
+                batch.delete(oldFolderRef);
                 
                 // 3. Actualizar todas las preguntas con ese container
-                // Como no podemos buscar por "container == oldName" si oldName es "Sin Carpeta" (porque podría ser null),
-                // hacemos query general o iteramos con cuidado.
-                // Para optimizar, buscamos donde container == oldName. Si es "Sin Carpeta", buscamos null.
-                // Firestore no busca null facil. Buscaremos todas y filtraremos o buscaremos por lotes.
-                // Mejor estrategia: buscar todos los docs de la materia y filtrar en memoria (si no son miles).
-                // O mejor: Si es "Sin Carpeta", buscamos solo las que no tienen container (difícil). 
-                // Asumiremos que si el usuario renombra "Sin Carpeta", quiere mover todo lo suelto a una nueva.
-                
-                // Vamos a usar getDocs general de saved_mcq. Es lo más seguro para consistencia.
                 const q = collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq');
                 const snap = await getDocs(q);
                 
@@ -1222,6 +1234,39 @@
                 hideProgress();
                 console.error(e);
                 showToast("Error al renombrar.", "error");
+            }
+        }
+
+        // --- ELIMINAR CARPETA ---
+        async function deleteFolder(folderName) {
+            if (!confirm(`¿Seguro que quieres eliminar la carpeta "${folderName}"?\n\nLos temas que contiene NO se borrarán, se moverán a "Sin Carpeta".`)) return;
+            
+            showProgress("Eliminando...", "Reorganizando contenido...", 50);
+            try {
+                const batch = writeBatch(db);
+                
+                // 1. Eliminar de colección 'folders'
+                batch.delete(doc(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'folders', folderName));
+                
+                // 2. Mover items a 'Sin Carpeta'
+                // Buscar items en este container
+                const q = query(
+                    collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'),
+                    where('container', '==', folderName)
+                );
+                const snap = await getDocs(q);
+                snap.forEach(d => {
+                    batch.update(d.ref, { container: 'Sin Carpeta' });
+                });
+                
+                await batch.commit();
+                hideProgress();
+                showToast("Carpeta eliminada.", "success");
+                loadManager();
+            } catch(e) {
+                hideProgress();
+                console.error(e);
+                showToast("Error al eliminar.", "error");
             }
         }
 
