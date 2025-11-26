@@ -99,7 +99,8 @@
 
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 h-screen flex flex-col overflow-hidden">
+<!-- CAMBIO: Se elimina h-screen y overflow-hidden, se usa min-h-screen para scroll natural -->
+<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col">
 
     <!-- Toast Notification -->
     <div id="toast">Notificación</div>
@@ -246,7 +247,8 @@
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-y-auto p-4 md:p-6">
+    <!-- CAMBIO: Se elimina overflow-y-auto para que el body controle el scroll -->
+    <main class="flex-1 p-4 md:p-6">
         <div class="max-w-5xl mx-auto bg-white shadow-lg rounded-xl p-6 min-h-[500px]">
 
             <!-- 1. MATERIAL -->
