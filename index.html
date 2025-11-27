@@ -326,8 +326,26 @@
                     <!-- Herramienta: Analizar -->
                     <div id="tool-analyze" class="hidden">
                         <h3 class="font-bold text-lg mb-2">Analizar PDF/Texto Choice</h3>
+                        
+                        <!-- Subir PDF -->
+                        <div class="flex gap-2 mb-2">
+                            <button id="btn-upload-pdf-analyze" class="px-3 py-2 bg-gray-100 text-gray-700 rounded border hover:bg-gray-200 flex items-center gap-2 text-sm font-medium">
+                                <svg data-lucide="file-up" class="w-4 h-4"></svg> Subir PDF de Examen
+                            </button>
+                            <input type="file" id="pdf-upload-analyze" class="hidden" accept=".pdf">
+                        </div>
+
                         <textarea id="raw-choice-text" rows="6" class="w-full p-2 border rounded text-sm mb-2" placeholder="Pega el texto del examen aquí..."></textarea>
                         <button id="run-analyze" class="w-full py-2 bg-purple-600 text-white font-bold rounded hover:bg-purple-700">Procesar con IA</button>
+                        
+                        <!-- RESULTADOS DE ANÁLISIS (REVISIÓN) -->
+                        <div id="analyze-results" class="mt-6 hidden border-t pt-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h4 class="font-bold text-gray-700">Revisión de Análisis</h4>
+                                <button id="save-all-analyzed" class="px-4 py-2 bg-purple-600 text-white rounded font-bold hover:bg-purple-700 text-sm">Guardar Todo</button>
+                            </div>
+                            <div id="analyze-review-list" class="space-y-4"></div>
+                        </div>
                     </div>
 
                     <!-- Herramienta: Generar -->
@@ -478,6 +496,8 @@
             <input type="hidden" id="edit-id">
             <!-- Un campo oculto para saber si estamos editando algo temporal o de la DB -->
             <input type="hidden" id="edit-mode" value="db"> 
+            <!-- Un campo oculto para saber de qué lista temporal (Generada o Analizada) viene -->
+            <input type="hidden" id="edit-list-type" value="generated">
             
             <div class="mb-3">
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Pregunta</label>
@@ -559,7 +579,8 @@
         let currentSubject = null;
         let cachedQuestions = [];
         let currentQuiz = { questions: [], index: 0, score: 0 };
-        let tempGeneratedQuestions = []; // Para la revisión antes de guardar
+        let tempGeneratedQuestions = []; // Revisión para GENERAR
+        let tempAnalyzedQuestions = []; // Revisión para ANALIZAR
         const apiKey = ""; 
         
         // --- GESTIÓN DE USUARIO Y SETTINGS ---
@@ -644,6 +665,7 @@
             document.getElementById('tool-analyze').classList.remove('hidden');
             document.getElementById('tool-generate').classList.add('hidden');
             document.getElementById('tool-manual').classList.add('hidden');
+            document.getElementById('analyze-results').classList.add('hidden'); // Reset view
         };
         document.getElementById('btn-generate-choice').onclick = () => { 
             document.getElementById('choice-menu').style.display = 'none'; 
@@ -651,7 +673,7 @@
             document.getElementById('tool-analyze').classList.add('hidden');
             document.getElementById('tool-generate').classList.remove('hidden');
             document.getElementById('tool-manual').classList.add('hidden');
-            document.getElementById('generated-results').classList.add('hidden');
+            document.getElementById('generated-results').classList.add('hidden'); // Reset view
         };
         document.getElementById('btn-add-manual').onclick = () => {
             document.getElementById('choice-menu').style.display = 'none'; 
@@ -800,6 +822,115 @@
             }
         };
 
+        // --- SUBIDA DE PDF PARA ANALIZAR ---
+        document.getElementById('btn-upload-pdf-analyze').onclick = () => {
+            document.getElementById('pdf-upload-analyze').click();
+        };
+
+        document.getElementById('pdf-upload-analyze').onchange = async (e) => {
+            if (e.target.files[0]) {
+                const file = e.target.files[0];
+                const textarea = document.getElementById('raw-choice-text');
+                textarea.placeholder = "Leyendo PDF...";
+                try {
+                    const buf = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument(buf).promise;
+                    let txt = "";
+                    for(let i=1; i<=pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const content = await page.getTextContent();
+                        txt += content.items.map(s => s.str).join(' ') + "\n";
+                    }
+                    textarea.value = txt;
+                    showToast("PDF cargado exitosamente.", "success");
+                } catch (err) {
+                    console.error(err);
+                    showToast("Error leyendo PDF.", "error");
+                }
+            }
+        };
+
+        // --- LÓGICA ANALIZAR (CON REVISIÓN) ---
+        
+        document.getElementById('run-analyze').onclick = async () => {
+            if (!currentSubject) return showToast("Selecciona una materia.", "error");
+            const text = document.getElementById('raw-choice-text').value;
+            if (!text.trim()) return showToast("El texto para analizar está vacío.", "error");
+            
+            showProgress("Analizando Examen", "Consultando IA...", 20);
+            try {
+                const syllabus = document.getElementById('syllabus').value;
+                const prompt = `Analiza este texto de examen multiple choice. Contexto del programa: ${syllabus.substring(0, 5000)}.
+                Extrae preguntas, opciones, respuesta correcta (indice 0-based) y tema.
+                Responde JSON Array: [{ "question": "...", "options": ["A", "B"], "correctIndex": 0, "topic": "...", "justification": "..." }]
+                Texto: ${text.substring(0, 30000)}`; // Limit input size
+                
+                const json = await callGemini(prompt, true);
+                
+                // Guardar en temporal
+                tempAnalyzedQuestions = json.map((q, i) => ({ ...q, tempId: i }));
+                
+                hideProgress();
+                renderAnalyzeReview(); // Mostrar revisión
+                
+            } catch (e) {
+                hideProgress(); showToast("Error: " + e.message, "error");
+            }
+        };
+
+        function renderAnalyzeReview() {
+            const container = document.getElementById('analyze-results');
+            const list = document.getElementById('analyze-review-list');
+            container.classList.remove('hidden');
+            list.innerHTML = '';
+            
+            if (tempAnalyzedQuestions.length === 0) {
+                container.classList.add('hidden');
+                return;
+            }
+            
+            tempAnalyzedQuestions.forEach((q, index) => {
+                const div = document.createElement('div');
+                div.className = 'p-4 border rounded bg-gray-50';
+                div.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-bold text-blue-600 uppercase">${q.topic}</span>
+                        <div class="flex gap-2">
+                            <button onclick="editTempQuestion(${index}, 'analyzed')" class="text-gray-500 hover:text-blue-600"><svg data-lucide="pencil" class="w-4 h-4"></svg></button>
+                            <button onclick="deleteTempQuestion(${index}, 'analyzed')" class="text-gray-500 hover:text-red-600"><svg data-lucide="trash-2" class="w-4 h-4"></svg></button>
+                        </div>
+                    </div>
+                    <p class="font-bold text-sm mb-2">${q.question}</p>
+                    <ul class="space-y-1 text-xs text-gray-600 mb-2">
+                        ${q.options.map((o, i) => `<li class="${i === q.correctIndex ? 'text-green-600 font-bold' : ''}">${String.fromCharCode(65+i)}. ${o}</li>`).join('')}
+                    </ul>
+                    <p class="text-xs text-gray-500 italic bg-white p-2 rounded border">${q.justification || "Sin justificación"}</p>
+                `;
+                list.appendChild(div);
+            });
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        document.getElementById('save-all-analyzed').onclick = async () => {
+            if (tempAnalyzedQuestions.length === 0) return;
+            
+            showProgress("Guardando...", "Almacenando en base de datos...", 50);
+            const batch = writeBatch(db);
+            
+            tempAnalyzedQuestions.forEach(q => {
+                const { tempId, ...cleanQ } = q;
+                const ref = doc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'));
+                batch.set(ref, { ...cleanQ, createdAt: serverTimestamp(), status: 'new', container: 'Sin Carpeta' });
+            });
+            
+            await batch.commit();
+            tempAnalyzedQuestions = [];
+            renderAnalyzeReview();
+            hideProgress();
+            showToast("¡Análisis guardado con éxito!", "success");
+            resetChoiceView();
+        };
+
         // --- LÓGICA CHOICE GENERADO (CON REVISIÓN) ---
         
         document.getElementById('run-generate').onclick = async () => {
@@ -858,8 +989,8 @@
                     <div class="flex justify-between items-start mb-2">
                         <span class="text-xs font-bold text-blue-600 uppercase">${q.topic}</span>
                         <div class="flex gap-2">
-                            <button onclick="editTempQuestion(${index})" class="text-gray-500 hover:text-blue-600"><svg data-lucide="pencil" class="w-4 h-4"></svg></button>
-                            <button onclick="deleteTempQuestion(${index})" class="text-gray-500 hover:text-red-600"><svg data-lucide="trash-2" class="w-4 h-4"></svg></button>
+                            <button onclick="editTempQuestion(${index}, 'generated')" class="text-gray-500 hover:text-blue-600"><svg data-lucide="pencil" class="w-4 h-4"></svg></button>
+                            <button onclick="deleteTempQuestion(${index}, 'generated')" class="text-gray-500 hover:text-red-600"><svg data-lucide="trash-2" class="w-4 h-4"></svg></button>
                         </div>
                     </div>
                     <p class="font-bold text-sm mb-2">${q.question}</p>
@@ -873,16 +1004,23 @@
             if (typeof lucide !== 'undefined') lucide.createIcons();
         }
         
-        window.deleteTempQuestion = (index) => {
-            tempGeneratedQuestions.splice(index, 1);
-            renderGeneratedReview();
+        window.deleteTempQuestion = (index, type) => {
+            if (type === 'generated') {
+                tempGeneratedQuestions.splice(index, 1);
+                renderGeneratedReview();
+            } else if (type === 'analyzed') {
+                tempAnalyzedQuestions.splice(index, 1);
+                renderAnalyzeReview();
+            }
         };
         
-        window.editTempQuestion = (index) => {
-            // Usar modal existente pero cambiar el modo
-            const q = tempGeneratedQuestions[index];
-            document.getElementById('edit-mode').value = 'temp'; // IMPORTANTE
-            document.getElementById('edit-id').value = index; // Usamos índice array en vez de ID
+        window.editTempQuestion = (index, type) => {
+            const list = type === 'generated' ? tempGeneratedQuestions : tempAnalyzedQuestions;
+            const q = list[index];
+            
+            document.getElementById('edit-mode').value = 'temp'; 
+            document.getElementById('edit-id').value = index; 
+            document.getElementById('edit-list-type').value = type; // Guardar origen (generated/analyzed)
             
             document.getElementById('edit-question').value = q.question;
             document.getElementById('edit-justification').value = q.justification || "";
@@ -923,16 +1061,6 @@
             showToast("¡Preguntas guardadas con éxito!", "success");
             resetChoiceView();
         };
-
-        async function saveQuestions(questions) {
-            // Old function kept for analyze tool compatibility
-            const batch = writeBatch(db);
-            questions.forEach(q => {
-                const ref = doc(collection(db, 'artifacts', firebaseConfig.projectId, 'users', userId, 'subjects', currentSubject, 'saved_mcq'));
-                batch.set(ref, { ...q, createdAt: serverTimestamp(), status: 'new', container: 'Sin Carpeta' }); 
-            });
-            await batch.commit();
-        }
 
         // --- NUEVA LÓGICA DE PRÁCTICA (JERÁRQUICA) ---
         async function loadTopicsList() {
@@ -1119,7 +1247,8 @@
         
         document.getElementById('save-edit-btn').onclick = async () => {
             const mode = document.getElementById('edit-mode').value;
-            const id = document.getElementById('edit-id').value; // En modo temp, es el índice del array
+            const listType = document.getElementById('edit-list-type').value;
+            const id = document.getElementById('edit-id').value; 
             const newQ = document.getElementById('edit-question').value;
             const newJust = document.getElementById('edit-justification').value;
             const newOpts = Array.from(document.querySelectorAll('.edit-opt-input')).map(i => i.value);
@@ -1130,14 +1259,19 @@
             if (mode === 'temp') {
                 // Actualizar array temporal
                 const index = parseInt(id);
-                tempGeneratedQuestions[index] = {
-                    ...tempGeneratedQuestions[index],
+                const list = listType === 'generated' ? tempGeneratedQuestions : tempAnalyzedQuestions;
+                
+                list[index] = {
+                    ...list[index],
                     question: newQ,
                     options: newOpts,
                     correctIndex: newCorrect,
                     justification: newJust
                 };
-                renderGeneratedReview();
+                
+                if (listType === 'generated') renderGeneratedReview();
+                else renderAnalyzeReview();
+                
                 showToast("Cambios temporales guardados", "success");
             } else {
                 // Actualizar Firestore (Modo normal)
@@ -1190,6 +1324,7 @@
             
             document.getElementById('flashcard-modal').style.display = 'none';
             showToast("Flashcard creada con éxito", "success");
+            if (document.getElementById('review-list').innerHTML !== '') loadReview(); // Reload if open
         };
         
         // NUEVO LISTENER PARA EL BOTÓN DE CREAR FLASHCARD EN REPASO
